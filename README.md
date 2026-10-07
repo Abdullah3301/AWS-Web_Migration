@@ -1,102 +1,211 @@
-# AWS_Web_Migration
-An AWS migration proof of concept featuring WordPress on EC2, a LAMP stack, IAM-based log collection, and CloudWatch monitoring.
 # AWS Web Migration
 
-Deploying a WordPress application on Amazon EC2 with centralized Apache logging and CPU monitoring through Amazon CloudWatch.
+A web migration proof of concept combining **AWS infrastructure, Linux administration, application deployment, and operational monitoring**.
 
-## Project Overview
+Deployed WordPress on **Amazon EC2 running Ubuntu**, configured the **Apache, PHP, and MySQL** stack, and administered the server through **SSH key-based access**. The implementation includes database-scoped application permissions, Linux file and service management, and an **EC2 IAM role** for publishing Apache error logs to **Amazon CloudWatch**. Monitoring was validated through collected log events and a CPU alarm triggered using a temporary test threshold.
 
-This project implements the target AWS environment for a web migration proof of concept. It combines a working LAMP application with IAM-based log collection and a tested CloudWatch CPU alarm.
+The completed scope covers the target AWS environment and monitoring setup. Transfer of an existing on-premises application and dataset has not yet been demonstrated. 
 
-The implementation covers server provisioning, Linux administration, application and database configuration, and monitoring. Transferring an existing on-premises application is outside the completed scope.
+<img width="1197" height="776" alt="Screenshot 2026-10-06 205322" src="https://github.com/user-attachments/assets/95da22e1-d09f-4852-ad02-8f54b60d23df" />
+
+## Architecture
+
+Apache, PHP, WordPress, and MySQL run on a single EC2 instance. Application logs are forwarded to CloudWatch using the instance’s IAM role, while a separate alarm evaluates the standard EC2 CPU utilization metric.
+
+| Path | Flow |
+|---|---|
+| Web requests | Browser → Apache → WordPress/PHP → MySQL |
+| Administration | Administrator → SSH → Ubuntu |
+| Application logs | Apache error log → CloudWatch agent → CloudWatch Logs |
+| Monitoring | EC2 CPU metric → CloudWatch alarm → SNS notification topic |
+
+The CloudWatch agent collects application logs. The CPU alarm uses the metric published by EC2 and does not depend on the agent.
 
 ## Technology Stack
 
 | Technology | Purpose |
 |---|---|
-| Amazon EC2 | Hosts the application on Ubuntu Linux |
-| Apache | Serves web requests |
-| PHP | Runs WordPress application code |
-| MySQL | Stores WordPress content |
-| WordPress | Provides the web application |
-| AWS IAM | Grants the EC2 instance permissions to publish monitoring data |
-| CloudWatch Agent | Collects Apache error logs |
-| CloudWatch Logs | Stores collected logs with seven-day retention |
-| CloudWatch Alarms | Evaluates EC2 CPU utilization |
-| Amazon SNS | Configured as the alarm notification destination |
-
-## Architecture
-
-Apache, PHP, WordPress, and MySQL run on a single EC2 instance.
-
-- Visitors access WordPress through Apache.
-- WordPress reads and writes content in the local MySQL database.
-- The CloudWatch agent forwards Apache error logs using the instance's IAM role.
-- A CloudWatch alarm evaluates the EC2 CPUUtilization metric.
-- Amazon SNS is configured for email notifications.
+| **Amazon EC2** | Hosts the application and local database |
+| **Ubuntu Linux** | Server operating system |
+| **SSH and key pairs** | Encrypted remote terminal access |
+| **EC2 Security Groups** | Instance-level network access control |
+| **Apache** | HTTP web server |
+| **PHP** | WordPress application runtime |
+| **MySQL and SQL** | Application data storage, database creation, and user permissions |
+| **WordPress** | Web application |
+| **APT** | Package installation and updates |
+| **systemd / systemctl** | Service startup, boot configuration, and status checks |
+| **AWS IAM** | Role-based permissions for the CloudWatch agent |
+| **CloudWatch Agent** | Collects Apache error logs |
+| **CloudWatch Logs** | Centralized log storage with seven-day retention |
+| **CloudWatch Alarms** | Threshold-based CPU monitoring |
+| **Amazon SNS** | Configured notification destination; email delivery remains unverified |
 
 ## Implementation
 
-### Application Deployment
+### 1. Infrastructure and Server Administration
 
 - Provisioned an Ubuntu EC2 instance.
-- Connected to the server using SSH key authentication.
-- Installed Apache, PHP, and MySQL.
-- Created a dedicated WordPress database and database user.
-- Configured WordPress database connectivity and file permissions.
-- Enabled Apache and MySQL to start automatically at boot.
-- Accessed the WordPress administration dashboard.
+- Connected through SSH using key-based authentication.
+- Updated system packages using APT.
+- Used `sudo` for Linux administrative operations.
 
-### Centralized Logging
+### 2. Web Stack Configuration
 
-- Attached an EC2 IAM role with CloudWatchAgentServerPolicy.
-- Installed and configured the CloudWatch agent.
-- Collected logs from `/var/log/apache2/error.log`.
-- Published logs to `/wordpress/apache/error`.
+- Installed Apache, PHP, the PHP–MySQL integration package, and MySQL.
+- Started Apache and MySQL using `systemctl`.
+- Enabled both services to start automatically at boot.
+- Checked service status before configuring the application.
+- Ran the MySQL security configuration utility.
+
+### 3. Application and Database Setup
+
+- Downloaded and extracted WordPress.
+- Placed application files in Apache’s document root.
+- Configured file ownership and permissions.
+- Created a dedicated WordPress database.
+- Created a local MySQL application user with privileges scoped to that database.
+- Configured database connectivity in `wp-config.php`.
+- Completed browser-based setup and accessed the WordPress dashboard.
+
+### 4. IAM Integration
+
+- Created an IAM role trusted by the EC2 service.
+- Attached the AWS-managed `CloudWatchAgentServerPolicy`.
+- Associated the role with the EC2 instance.
+- Used role-provided temporary credentials for the agent’s AWS access.
+
+The instance role authorizes requests to AWS services. Linux `sudo` permissions separately control administrative operations inside Ubuntu.
+
+### 5. Centralized Logging
+
+- Installed the Amazon CloudWatch agent on Ubuntu.
+- Configured collection of `/var/log/apache2/error.log`.
+- Published events to the `/wordpress/apache/error` log group.
 - Used the EC2 instance ID as the log stream name.
-- Configured seven-day log retention.
-- Verified Apache log entries appeared in CloudWatch.
+- Configured seven-day retention.
+- Verified the agent’s running status and confirmed log delivery in the CloudWatch console.
 
-### CPU Alarm Testing
+### 6. CPU Alarm Validation
 
-| Setting | Test configuration |
+Configured an alarm against the instance’s `CPUUtilization` metric.
+
+| Setting | Test Configuration |
 |---|---|
-| Namespace | AWS/EC2 |
-| Metric | CPUUtilization |
+| Namespace | `AWS/EC2` |
+| Metric | `CPUUtilization` |
 | Statistic | Average |
 | Period | 5 minutes |
-| Threshold | Greater than 2% |
+| Comparison | Greater than |
+| Temporary test threshold | 2% |
 | Datapoints to alarm | 1 out of 1 |
+| Notification destination | Amazon SNS topic |
 
-A temporary 2% threshold was used to validate alarm triggering under light activity. The alarm successfully entered the ALARM state.
+The temporary 2% threshold allowed alarm behavior to be tested under light activity. CloudWatch successfully transitioned the alarm into the **ALARM** state when the five-minute CPU average exceeded the threshold.
 
-The intended operating threshold is 80%; the 2% setting is for testing only.
+The intended operating threshold is **80%**. The screenshot below records the **2% test configuration**, not a high-load performance test.
+
+## CloudWatch Agent Configuration
+
+The following configuration forwards Apache error logs to CloudWatch and applies seven-day retention:
+
+```json
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/apache2/error.log",
+            "log_group_name": "/wordpress/apache/error",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+Configuration file location:
+
+```text
+/opt/aws/amazon-cloudwatch-agent/etc/wordpress-logs.json
+```
+
+Load the configuration and start the agent:
+
+```bash
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config \
+  -m ec2 \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/wordpress-logs.json \
+  -s
+```
+
+Check agent status:
+
+```bash
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status
+```
+
+## Deployment and Monitoring
+
+### WordPress Application
+
+WordPress administration dashboard after deployment.
+
+<img width="1887" height="895" alt="Screenshot 2026-10-06 124717" src="https://github.com/user-attachments/assets/1bac8b25-b51e-40f9-84f2-ad6e9c409641" />
+
+
+### Centralized Application Logs
+
+Apache error logs collected from EC2 and displayed in CloudWatch.
+
+<img width="2053" height="766" alt="Privacy-redacted CloudWatch log screenshot" src="https://github.com/user-attachments/assets/d367c625-0a2e-43e8-a5e4-979d07cda021" />
+
+### CPU Alarm Validation
+
+CloudWatch alarm in the **ALARM** state during the temporary 2% threshold test.
+
+<img width="1895" height="607" alt="Screenshot 2026-10-06 195316" src="https://github.com/user-attachments/assets/8d852ae1-2395-4930-84f9-65bcb57bdffb" />
+
 
 ## Validation Results
 
 | Check | Result |
 |---|---|
-| WordPress dashboard accessible | Verified |
-| CloudWatch agent running | Verified |
-| Apache logs visible in CloudWatch | Verified |
-| CPU alarm entered ALARM state | Verified |
-| SNS email delivery | Not yet verified |
+| WordPress administration dashboard accessible | Verified |
+| CloudWatch agent running and configured | Verified |
+| Apache log events arriving in CloudWatch | Verified |
+| CPU alarm entering ALARM state | Verified using the temporary 2% threshold |
+| SNS email notification delivery | Not yet verified |
 
 ## Engineering Decisions
 
-- Kept the application and database on one instance to limit complexity and cost.
-- Used an IAM instance role instead of storing AWS access keys on the server.
-- Limited log retention to seven days.
-- Tested alarm behavior using a temporary low threshold.
+**Focused deployment:** Application and database components share one EC2 instance to keep the proof of concept manageable and limit infrastructure cost. This introduces a single point of failure.
 
-## Current Limitations
+**Role-based AWS access:** The CloudWatch agent uses an EC2 IAM role instead of stored AWS access keys. The implementation uses an AWS-managed policy; permissions could be narrowed further through a custom policy scoped to the required log resources.
 
-- The single EC2 instance is a single point of failure.
+**Database-scoped permissions:** WordPress connects through a dedicated MySQL user with access to its application database.
+
+**Bounded log retention:** Seven-day retention limits how long logs are stored. Log ingestion volume still affects cost.
+
+**Explicit monitoring validation:** A temporary low threshold verified the alarm’s state transition without requiring a sustained high-CPU workload.
+
+## Troubleshooting Observations
+
+Centralized logging exposed recurring PHP warnings about JIT memory allocation. These messages confirmed that application-level events were reaching CloudWatch.
+
+The cause and remediation of these warnings remain to be investigated. Alarm triggering was also verified independently of email delivery, which remains an outstanding validation item.
+
+## Scope and Limitations
+
+- Application and database components run on a single EC2 instance.
 - The deployment uses HTTP; HTTPS has not been configured.
-- Backup restoration and high availability have not been implemented.
-- Collected logs exposed PHP JIT memory-allocation warnings that remain to be investigated.
-- Alarm triggering is verified; email delivery requires further validation.
-
-## Skills Demonstrated
-
-AWS EC2 provisioning, Ubuntu administration, SSH access, LAMP configuration, MySQL user management, IAM roles, centralized logging, and CloudWatch alarm testing.
+- High availability and automated scaling are outside the implemented scope.
+- Backup restoration has not been tested.
+- Existing on-premises application and data transfer have not been demonstrated.
+- SNS email delivery remains unverified.
+- PHP JIT memory-allocation warnings require further investigation.
