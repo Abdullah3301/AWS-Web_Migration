@@ -1,6 +1,6 @@
 # AWS Web Migration
 
-A web migration proof of concept combining **AWS infrastructure, Linux administration, application deployment, and operational monitoring**.
+A web migration combining **AWS infrastructure, Linux administration, application deployment, and operational monitoring**.
 
 Deployed WordPress on **Amazon EC2 running Ubuntu**, configured the **Apache, PHP, and MySQL** stack, and administered the server through **SSH key-based access**. The implementation includes database-scoped application permissions, Linux file and service management, and an **EC2 IAM role** for publishing Apache error logs to **Amazon CloudWatch**. Monitoring was validated through collected log events and a CPU alarm triggered using a temporary test threshold.
 
